@@ -78,7 +78,13 @@ public class VoiceRecorder extends Plugin {
 
         try {
             mediaRecorder = new CustomMediaRecorder(getContext());
-            mediaRecorder.startRecording();
+            mediaRecorder.startRecording((audioData, size) -> {
+              // Process and emit audio chunks
+              String base64Data = Base64.encodeToString(audioData, 0, size, Base64.NO_WRAP);
+              JSObject chunk = new JSObject();
+              chunk.put("data", base64Data);
+              notifyListeners("onAudioChunk", chunk);
+            });
             call.resolve(ResponseGenerator.successResponse());
         } catch (Exception exp) {
             mediaRecorder = null;

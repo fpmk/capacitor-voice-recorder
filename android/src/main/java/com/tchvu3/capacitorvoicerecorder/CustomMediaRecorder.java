@@ -1,54 +1,85 @@
 package com.tchvu3.capacitorvoicerecorder;
 
 import android.content.Context;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Build;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 
 public class CustomMediaRecorder {
 
     private final Context context;
-    private MediaRecorder mediaRecorder;
+    private AudioRecord audioRecorder;
+    private int bufferSize;
     private File outputFile;
+    private FileOutputStream fileOutputStream;
+    private boolean isStreaming = false;
     private CurrentRecordingStatus currentRecordingStatus = CurrentRecordingStatus.NONE;
+    private AudioChunkListener chunkListener;
 
     public CustomMediaRecorder(Context context) throws IOException {
         this.context = context;
-        generateMediaRecorder();
+        generateAudioRecorder();
     }
 
-    private void generateMediaRecorder() throws IOException {
-        mediaRecorder = new MediaRecorder();
-        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.AAC_ADTS);
-        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-        mediaRecorder.setAudioEncodingBitRate(96000);
-        mediaRecorder.setAudioSamplingRate(44100);
+    private void generateAudioRecorder() throws IOException {
+        bufferSize = AudioRecord.getMinBufferSize(44100, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        audioRecorder = new AudioRecord(MediaRecorder.AudioSource.MIC, 44100, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, bufferSize);
         setRecorderOutputFile();
-        mediaRecorder.prepare();
     }
 
     private void setRecorderOutputFile() throws IOException {
         File outputDir = context.getCacheDir();
-        outputFile = File.createTempFile("voice_record_temp", ".aac", outputDir);
+        outputFile = File.createTempFile("voice_record_temp", ".pcm", outputDir);
         outputFile.deleteOnExit();
-        mediaRecorder.setOutputFile(outputFile.getAbsolutePath());
+        fileOutputStream = new FileOutputStream(outputFile);
     }
 
-    public void startRecording() {
-        mediaRecorder.start();
+    public void startRecording(AudioChunkListener listener) {
+        if (audioRecorder.getState() != AudioRecord.STATE_INITIALIZED) {
+            return;
+        }
+        this.chunkListener = listener;
+        audioRecorder.startRecording();
         currentRecordingStatus = CurrentRecordingStatus.RECORDING;
+        isStreaming = true;
+
+        // Start a new thread for streaming audio data in chunks
+        new Thread(() -> {
+            byte[] buffer = new byte[bufferSize];
+            while (isStreaming) {
+                int readSize = audioRecorder.read(buffer, 0, buffer.length);
+                if (readSize > 0) {
+                    // Send chunk to listener for real-time streaming
+                    if (chunkListener != null) {
+                        chunkListener.onAudioChunk(buffer, readSize);
+                    }
+                    // Write to file for later access if needed
+                    try {
+                        fileOutputStream.write(buffer, 0, readSize);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }).start();
     }
 
     public void stopRecording() {
-        mediaRecorder.stop();
-        mediaRecorder.release();
+        if (isStreaming) {
+            isStreaming = false;
+            audioRecorder.stop();
         currentRecordingStatus = CurrentRecordingStatus.NONE;
+            try {
+                fileOutputStream.close();
+            } catch (IOException e) {
+                e.printStackTrace();
     }
-
-    public File getOutputFile() {
-        return outputFile;
+        }
     }
 
     public boolean pauseRecording() throws NotSupportedOsVersion {
@@ -57,8 +88,9 @@ public class CustomMediaRecorder {
         }
 
         if (currentRecordingStatus == CurrentRecordingStatus.RECORDING) {
-            mediaRecorder.pause();
+            audioRecorder.stop();
             currentRecordingStatus = CurrentRecordingStatus.PAUSED;
+            isStreaming = false;
             return true;
         } else {
             return false;
@@ -71,12 +103,17 @@ public class CustomMediaRecorder {
         }
 
         if (currentRecordingStatus == CurrentRecordingStatus.PAUSED) {
-            mediaRecorder.resume();
+            audioRecorder.startRecording();
             currentRecordingStatus = CurrentRecordingStatus.RECORDING;
+            isStreaming = true;
             return true;
         } else {
             return false;
         }
+    }
+
+    public File getOutputFile() {
+        return outputFile;
     }
 
     public CurrentRecordingStatus getCurrentStatus() {
@@ -95,7 +132,7 @@ public class CustomMediaRecorder {
         CustomMediaRecorder tempMediaRecorder = null;
         try {
             tempMediaRecorder = new CustomMediaRecorder(context);
-            tempMediaRecorder.startRecording();
+            tempMediaRecorder.startRecording(null);
             tempMediaRecorder.stopRecording();
             return true;
         } catch (Exception exp) {
@@ -103,5 +140,9 @@ public class CustomMediaRecorder {
         } finally {
             if (tempMediaRecorder != null) tempMediaRecorder.deleteOutputFile();
         }
+    }
+
+    public interface AudioChunkListener {
+        void onAudioChunk(byte[] audioData, int size);
     }
 }
