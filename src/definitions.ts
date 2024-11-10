@@ -38,9 +38,4 @@ export interface VoiceRecorderPlugin {
   resumeRecording(): Promise<GenericResponse>;
 
   getCurrentStatus(): Promise<CurrentRecordingStatus>;
-
-  addListener(
-    eventName: 'onAudioChunk',
-    listenerFunc: (audioChunk: { data: Uint8Array }) => void
-  ): Promise<void>;
 }
