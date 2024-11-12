@@ -1,7 +1,13 @@
 import getBlobDuration from 'get-blob-duration';
 
+import type {
+  AudioChunkEvent,
+  Base64String,
+  CurrentRecordingStatus,
+  GenericResponse,
+  RecordingData,
+} from './definitions';
 import { RecordingStatus } from './definitions';
-import type { Base64String, CurrentRecordingStatus, GenericResponse, RecordingData } from './definitions';
 import {
   alreadyRecordingError,
   couldNotQueryPermissionStatusError,
@@ -23,6 +29,9 @@ export class VoiceRecorderImpl {
   private mediaRecorder: MediaRecorder | null = null;
   private chunks: any[] = [];
   private pendingResult: Promise<RecordingData> = neverResolvingPromise();
+  private buffer: Blob[] = [];
+  private bufferSize: number = 0;
+  private chunkSize: number = 4096; // 4KB in bytes
 
   public static async canDeviceVoiceRecord(): Promise<GenericResponse> {
     if (navigator?.mediaDevices?.getUserMedia == null || VoiceRecorderImpl.getSupportedMimeType() == null) {
@@ -32,7 +41,7 @@ export class VoiceRecorderImpl {
     }
   }
 
-  public async startRecording(): Promise<GenericResponse> {
+  public async startRecording(_this: any): Promise<GenericResponse> {
     if (this.mediaRecorder != null) {
       throw alreadyRecordingError();
     }
@@ -47,7 +56,7 @@ export class VoiceRecorderImpl {
 
     return navigator.mediaDevices
       .getUserMedia({ audio: true })
-      .then(this.onSuccessfullyStartedRecording.bind(this))
+      .then((res) => this.onSuccessfullyStartedRecording(res, _this))
       .catch(this.onFailedToStartRecording.bind(this));
   }
 
@@ -60,9 +69,10 @@ export class VoiceRecorderImpl {
       this.mediaRecorder.stream.getTracks().forEach((track) => track.stop());
       return this.pendingResult;
     } catch (ignore) {
+      this.prepareInstanceForNextOperation();
       throw failedToFetchRecordingError();
     } finally {
-      this.prepareInstanceForNextOperation();
+      // this.prepareInstanceForNextOperation();
     }
   }
 
@@ -139,7 +149,7 @@ export class VoiceRecorderImpl {
     return foundSupportedType ?? null;
   }
 
-  private onSuccessfullyStartedRecording(stream: MediaStream): GenericResponse {
+  private onSuccessfullyStartedRecording(stream: MediaStream, _this: any): GenericResponse {
     this.pendingResult = new Promise((resolve, reject) => {
       this.mediaRecorder = new MediaRecorder(stream);
       this.mediaRecorder.onerror = () => {
@@ -164,10 +174,37 @@ export class VoiceRecorderImpl {
         this.prepareInstanceForNextOperation();
         resolve({ value: { recordDataBase64, mimeType, msDuration: recordingDuration * 1000 } });
       };
-      this.mediaRecorder.ondataavailable = (event: any) => this.chunks.push(event.data);
-      this.mediaRecorder.start();
+      this.mediaRecorder.ondataavailable = (event: any) => {
+        this.chunks.push(event.data);
+        this.handleDataAvailable(event.data, _this);
+      };
+      this.mediaRecorder.start(1);
     });
     return successResponse();
+  }
+
+  private handleDataAvailable(blob: Blob, _this: any) {
+    this.buffer.push(blob);
+    this.bufferSize += blob.size;
+
+    // Check if we have accumulated 4KB or more
+    if (this.bufferSize >= this.chunkSize) {
+      // Concatenate buffered Blobs into a single Blob
+      const combinedBlob = new Blob(this.buffer, { type: blob.type });
+
+      // Convert Blob to Base64 and emit as a chunk
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        const audioChunkEvent: AudioChunkEvent = { data: base64data.split(',')[1] }; // Base64-encoded audio
+        _this.notifyListeners('onAudioChunk', audioChunkEvent); // Emit audio chunk event
+      };
+      reader.readAsDataURL(combinedBlob);
+
+      // Reset buffer
+      this.buffer = [];
+      this.bufferSize = 0;
+    }
   }
 
   private onFailedToStartRecording(): GenericResponse {

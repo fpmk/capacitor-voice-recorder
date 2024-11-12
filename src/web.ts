@@ -1,7 +1,8 @@
-import { WebPlugin } from '@capacitor/core';
+import { PluginListenerHandle, WebPlugin } from '@capacitor/core';
 
 import { VoiceRecorderImpl } from './VoiceRecorderImpl';
 import type { CurrentRecordingStatus, GenericResponse, RecordingData, VoiceRecorderPlugin } from './definitions';
+import { ListenerCallback } from '@capacitor/core/types/web-plugin';
 
 export class VoiceRecorderWeb extends WebPlugin implements VoiceRecorderPlugin {
   private voiceRecorderInstance = new VoiceRecorderImpl();
@@ -19,7 +20,7 @@ export class VoiceRecorderWeb extends WebPlugin implements VoiceRecorderPlugin {
   }
 
   public startRecording(): Promise<GenericResponse> {
-    return this.voiceRecorderInstance.startRecording();
+    return this.voiceRecorderInstance.startRecording(this);
   }
 
   public stopRecording(): Promise<RecordingData> {
@@ -36,5 +37,11 @@ export class VoiceRecorderWeb extends WebPlugin implements VoiceRecorderPlugin {
 
   public getCurrentStatus(): Promise<CurrentRecordingStatus> {
     return this.voiceRecorderInstance.getCurrentStatus();
+  }
+
+  addListener(
+    eventName: string, listenerFunc: ListenerCallback
+  ): Promise<PluginListenerHandle> {
+    return super.addListener(eventName, listenerFunc);
   }
 }
