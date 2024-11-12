@@ -67,6 +67,7 @@ export class VoiceRecorderImpl {
     try {
       this.mediaRecorder.stop();
       this.mediaRecorder.stream.getTracks().forEach((track) => track.stop());
+      this.mediaRecorder = null;
       return this.pendingResult;
     } catch (ignore) {
       this.prepareInstanceForNextOperation();
@@ -169,6 +170,9 @@ export class VoiceRecorderImpl {
           reject(emptyRecordingError());
           return;
         }
+        if (this.buffer.length) {
+          this.sendAudioData(mimeType, _this);
+        }
         const recordDataBase64 = await VoiceRecorderImpl.blobToBase64(blobVoiceRecording);
         const recordingDuration = await getBlobDuration(blobVoiceRecording);
         this.prepareInstanceForNextOperation();
@@ -189,22 +193,26 @@ export class VoiceRecorderImpl {
 
     // Check if we have accumulated 4KB or more
     if (this.bufferSize >= this.chunkSize) {
-      // Concatenate buffered Blobs into a single Blob
-      const combinedBlob = new Blob(this.buffer, { type: blob.type });
-
-      // Convert Blob to Base64 and emit as a chunk
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64data = reader.result as string;
-        const audioChunkEvent: AudioChunkEvent = { data: base64data.split(',')[1] }; // Base64-encoded audio
-        _this.notifyListeners('onAudioChunk', audioChunkEvent); // Emit audio chunk event
-      };
-      reader.readAsDataURL(combinedBlob);
+      this.sendAudioData(blob.type, _this);
 
       // Reset buffer
       this.buffer = [];
       this.bufferSize = 0;
     }
+  }
+
+  private sendAudioData(type: string, _this: any) {
+    // Concatenate buffered Blobs into a single Blob
+    const combinedBlob = new Blob(this.buffer, { type });
+
+    // Convert Blob to Base64 and emit as a chunk
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64data = reader.result as string;
+      const audioChunkEvent: AudioChunkEvent = { data: base64data.split(',')[1] }; // Base64-encoded audio
+      _this.notifyListeners('onAudioChunk', audioChunkEvent); // Emit audio chunk event
+    };
+    reader.readAsDataURL(combinedBlob);
   }
 
   private onFailedToStartRecording(): GenericResponse {
@@ -236,5 +244,7 @@ export class VoiceRecorderImpl {
     this.pendingResult = neverResolvingPromise();
     this.mediaRecorder = null;
     this.chunks = [];
+    this.buffer = [];
+    this.bufferSize = 0;
   }
 }

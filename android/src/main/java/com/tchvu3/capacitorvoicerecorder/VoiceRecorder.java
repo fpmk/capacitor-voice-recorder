@@ -102,17 +102,18 @@ public class VoiceRecorder extends Plugin {
 
         try {
             mediaRecorder.stopRecording();
-            File recordedFile = mediaRecorder.getOutputFile();
-            RecordData recordData = new RecordData(
-                readRecordedFileAsBase64(recordedFile),
-                getMsDurationOfAudioFile(recordedFile.getAbsolutePath()),
-                "audio/aac"
-            );
-            if (recordData.getRecordDataBase64() == null || recordData.getMsDuration() < 0) {
-                call.reject(Messages.EMPTY_RECORDING);
-            } else {
-                call.resolve(ResponseGenerator.dataResponse(recordData.toJSObject()));
-            }
+//            File recordedFile = mediaRecorder.getOutputFile();
+//            RecordData recordData = new RecordData(
+//                readRecordedFileAsBase64(recordedFile),
+//                getMsDurationOfAudioFile(recordedFile.getAbsolutePath()),
+//                "audio/aac"
+//            );
+//            if (recordData.getRecordDataBase64() == null || recordData.getMsDuration() < 0) {
+//                call.reject(Messages.EMPTY_RECORDING);
+//            } else {
+//                call.resolve(ResponseGenerator.dataResponse(recordData.toJSObject()));
+//            }
+            call.resolve(ResponseGenerator.successResponse());
         } catch (Exception exp) {
             call.reject(Messages.FAILED_TO_FETCH_RECORDING, exp);
         } finally {
