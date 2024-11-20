@@ -30,8 +30,9 @@ export class VoiceRecorderImpl {
   private chunks: any[] = [];
   private pendingResult: Promise<RecordingData> = neverResolvingPromise();
   private buffer: Blob[] = [];
-  private bufferSize: number = 0;
-  private chunkSize: number = 4096; // 4KB in bytes
+  private firstChunk = false;
+  private bufferSize = 0;
+  private chunkSize = 4096; // 4KB in bytes
 
   public static async canDeviceVoiceRecord(): Promise<GenericResponse> {
     if (navigator?.mediaDevices?.getUserMedia == null || VoiceRecorderImpl.getSupportedMimeType() == null) {
@@ -53,7 +54,6 @@ export class VoiceRecorderImpl {
     if (!havingPermission.value) {
       throw missingPermissionError();
     }
-
     return navigator.mediaDevices
       .getUserMedia({ audio: true })
       .then((res) => this.onSuccessfullyStartedRecording(res, _this))
@@ -151,6 +151,7 @@ export class VoiceRecorderImpl {
   }
 
   private onSuccessfullyStartedRecording(stream: MediaStream, _this: any): GenericResponse {
+    this.firstChunk = false;
     this.pendingResult = new Promise((resolve, reject) => {
       this.mediaRecorder = new MediaRecorder(stream);
       this.mediaRecorder.onerror = () => {
@@ -192,7 +193,8 @@ export class VoiceRecorderImpl {
     this.bufferSize += blob.size;
 
     // Check if we have accumulated 4KB or more
-    if (this.bufferSize >= this.chunkSize) {
+    if (this.bufferSize >= this.chunkSize || !this.firstChunk) {
+      this.firstChunk = true;
       this.sendAudioData(blob.type, _this);
 
       // Reset buffer
