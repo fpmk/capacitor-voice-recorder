@@ -33,6 +33,7 @@ export class VoiceRecorderImpl {
   private firstChunk = false;
   private bufferSize = 0;
   private chunkSize = 4096; // 4KB in bytes
+  private firstChunkSize = 44; // 44 bytes
 
   public static async canDeviceVoiceRecord(): Promise<GenericResponse> {
     if (navigator?.mediaDevices?.getUserMedia == null || VoiceRecorderImpl.getSupportedMimeType() == null) {
@@ -183,7 +184,7 @@ export class VoiceRecorderImpl {
         this.chunks.push(event.data);
         this.handleDataAvailable(event.data, _this);
       };
-      this.mediaRecorder.start(1);
+      this.mediaRecorder.start(0);
     });
     return successResponse();
   }
@@ -193,7 +194,7 @@ export class VoiceRecorderImpl {
     this.bufferSize += blob.size;
 
     // Check if we have accumulated 4KB or more
-    if (this.bufferSize >= this.chunkSize || !this.firstChunk) {
+    if (this.bufferSize >= this.chunkSize || (!this.firstChunk && this.bufferSize >= this.firstChunkSize)) {
       this.firstChunk = true;
       this.sendAudioData(blob.type, _this);
 
@@ -248,5 +249,6 @@ export class VoiceRecorderImpl {
     this.chunks = [];
     this.buffer = [];
     this.bufferSize = 0;
+    this.firstChunk = false;
   }
 }

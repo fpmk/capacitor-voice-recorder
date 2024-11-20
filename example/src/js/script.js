@@ -10,7 +10,7 @@ document.querySelector('#request-for-permission').addEventListener('click', () =
 
 document.querySelector('#start-recording').addEventListener('click', () => {
   VoiceRecorder.addListener('onAudioChunk', (res) => {
-    console.log('Chunk', res.data);
+    // console.log('Chunk', res.data);
   });
   VoiceRecorder.startRecording()
     .then((result) => onPromiseResolved(result, 'start'))
