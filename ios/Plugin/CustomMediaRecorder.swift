@@ -1,14 +1,20 @@
 import Foundation
 import AVFoundation
 
-class CustomMediaRecorder {
+protocol AudioChunkDelegate: AnyObject {
+    func didReceiveAudioChunk(_ chunk: Data)
+}
+
+class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate {
     
     private var recordingSession: AVAudioSession!
     private var audioRecorder: AVAudioRecorder!
     private var audioFilePath: URL!
     private var originalRecordingSessionCategory: AVAudioSession.Category!
     private var status = CurrentRecordingStatus.NONE
-    
+
+    weak var delegate: AudioChunkDelegate?
+
     private let settings = [
         AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
         AVSampleRateKey: 44100,
@@ -16,6 +22,9 @@ class CustomMediaRecorder {
         AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
     ]
     
+    private var audioBuffer = Data()
+    private let chunkSize: Int = 1024 * 4 // Example: 4 KB per chunk
+
     private func getDirectoryToSaveAudioFile() -> URL {
         return URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
     }
@@ -28,8 +37,17 @@ class CustomMediaRecorder {
             try recordingSession.setActive(true)
             audioFilePath = getDirectoryToSaveAudioFile().appendingPathComponent("\(UUID().uuidString).aac")
             audioRecorder = try AVAudioRecorder(url: audioFilePath, settings: settings)
-            audioRecorder.record()
+            audioRecorder.delegate = self
+            audioRecorder.isMeteringEnabled = true
+            audioRecorder.record(forDuration: 0) // Record indefinitely
+
             status = CurrentRecordingStatus.RECORDING
+
+            // Monitor the audio file for changes
+            DispatchQueue.global(qos: .background).async { [weak self] in
+                self?.monitorAudioFile()
+            }
+
             return true
         } catch {
             return false
@@ -48,6 +66,39 @@ class CustomMediaRecorder {
         } catch {}
     }
     
+    private func monitorAudioFile() {
+        while audioRecorder.isRecording {
+            guard let recorder = audioRecorder else { return }
+            recorder.updateMeters()
+
+            do {
+                // Read raw data from the file
+                let audioData = try Data(contentsOf: audioFilePath)
+
+                // Append to the buffer
+                audioBuffer.append(audioData)
+
+                // Check if the buffer has reached the desired chunk size
+                if audioBuffer.count >= chunkSize {
+                    let chunk = audioBuffer.prefix(chunkSize) // Extract the chunk
+                    audioBuffer.removeFirst(chunkSize)        // Remove the chunk from the buffer
+                    delegate?.didReceiveAudioChunk(chunk)     // Notify the delegate
+                }
+            } catch {
+                print("Error monitoring audio file: \(error)")
+            }
+
+            // Sleep briefly to avoid overloading the CPU
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+
+        // Flush remaining data in the buffer
+        if !audioBuffer.isEmpty {
+            delegate?.didReceiveAudioChunk(audioBuffer)
+            audioBuffer.removeAll()
+        }
+    }
+
     public func getOutputFile() -> URL {
         return audioFilePath
     }

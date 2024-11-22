@@ -3,7 +3,7 @@ import AVFoundation
 import Capacitor
 
 @objc(VoiceRecorder)
-public class VoiceRecorder: CAPPlugin {
+public class VoiceRecorder: CAPPlugin, AudioChunkDelegate {
 
     private var customMediaRecorder: CustomMediaRecorder? = nil
     
@@ -38,6 +38,8 @@ public class VoiceRecorder: CAPPlugin {
         }
         
         customMediaRecorder = CustomMediaRecorder()
+        customMediaRecorder?.delegate = self
+
         if(customMediaRecorder == nil) {
             call.reject(Messages.CANNOT_RECORD_ON_THIS_PHONE)
             return
@@ -59,73 +61,17 @@ public class VoiceRecorder: CAPPlugin {
         }
         
         customMediaRecorder?.stopRecording()
-        
-        let audioFileUrl = customMediaRecorder?.getOutputFile()
-        if(audioFileUrl == nil) {
             customMediaRecorder = nil
-            call.reject(Messages.FAILED_TO_FETCH_RECORDING)
-            return
-        }
-        let recordData = RecordData(
-            recordDataBase64: readFileAsBase64(audioFileUrl),
-            mimeType: "audio/aac",
-            msDuration: getMsDurationOfAudioFile(audioFileUrl)
-        )
-        customMediaRecorder = nil
-        if recordData.recordDataBase64 == nil || recordData.msDuration < 0 {
-            call.reject(Messages.EMPTY_RECORDING)
-        } else {
-            call.resolve(ResponseGenerator.dataResponse(recordData.toDictionary()))
-        }
+        call.resolve(ResponseGenerator.successResponse())
     }
     
-    @objc func pauseRecording(_ call: CAPPluginCall) {
-        if(customMediaRecorder == nil) {
-            call.reject(Messages.RECORDING_HAS_NOT_STARTED)
-        } else {
-            call.resolve(ResponseGenerator.fromBoolean(customMediaRecorder?.pauseRecording() ?? false))
-        }
-    }
-    
-    @objc func resumeRecording(_ call: CAPPluginCall) {
-        if(customMediaRecorder == nil) {
-            call.reject(Messages.RECORDING_HAS_NOT_STARTED)
-        } else {
-            call.resolve(ResponseGenerator.fromBoolean(customMediaRecorder?.resumeRecording() ?? false))
-        }
-    }
-    
-    @objc func getCurrentStatus(_ call: CAPPluginCall) {
-        if(customMediaRecorder == nil) {
-            call.resolve(ResponseGenerator.statusResponse(CurrentRecordingStatus.NONE))
-        } else {
-            call.resolve(ResponseGenerator.statusResponse(customMediaRecorder?.getCurrentStatus() ?? CurrentRecordingStatus.NONE))
-        }
+    // Delegate method to handle audio chunks
+    func didReceiveAudioChunk(_ chunk: Data) {
+        let base64Chunk = chunk.base64EncodedString()
+        notifyListeners("onAudioChunk", data: ["chunk": base64Chunk])
     }
     
     func doesUserGaveAudioRecordingPermission() -> Bool {
         return AVAudioSession.sharedInstance().recordPermission == AVAudioSession.RecordPermission.granted
     }
-    
-    func readFileAsBase64(_ filePath: URL?) -> String? {
-        if(filePath == nil) {
-            return nil
-        }
-        
-        do {
-            let fileData = try Data.init(contentsOf: filePath!)
-            let fileStream = fileData.base64EncodedString(options: NSData.Base64EncodingOptions.init(rawValue: 0))
-            return fileStream
-        } catch {}
-        
-        return nil
-    }
-    
-    func getMsDurationOfAudioFile(_ filePath: URL?) -> Int {
-        if filePath == nil {
-            return -1
-        }
-        return Int(CMTimeGetSeconds(AVURLAsset(url: filePath!).duration) * 1000)
-    }
-    
 }
