@@ -1,6 +1,6 @@
 {
   "name": "fpmk-capacitor-voice-recorder",
-  "version": "6.3.5",
+  "version": "6.3.6",
   "description": "Capacitor plugin for voice recording",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -11,7 +11,7 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "CapacitorVoiceRecorder.podspec"
+    "FpmkCapacitorVoiceRecorder.podspec"
   ],
   "author": {
     "name": "Avihu Harush",
