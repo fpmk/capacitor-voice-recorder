@@ -64,7 +64,15 @@ public class VoiceRecorder: CAPPlugin, AudioChunkDelegate {
             customMediaRecorder = nil
         call.resolve(ResponseGenerator.successResponse())
     }
-    
+
+    @objc func getCurrentStatus(_ call: CAPPluginCall) {
+        if(customMediaRecorder == nil) {
+            call.resolve(ResponseGenerator.statusResponse(CurrentRecordingStatus.NONE))
+        } else {
+            call.resolve(ResponseGenerator.statusResponse(customMediaRecorder?.getCurrentStatus() ?? CurrentRecordingStatus.NONE))
+        }
+    }
+
     // Delegate method to handle audio chunks
     func didReceiveAudioChunk(_ chunk: Data) {
         let base64Chunk = chunk.base64EncodedString()
