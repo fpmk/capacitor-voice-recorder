@@ -76,8 +76,8 @@ public class VoiceRecorder: CAPPlugin, AudioChunkDelegate {
     // Delegate method to handle audio chunks
     func didReceiveAudioChunk(_ chunk: Data) {
         let base64Chunk = chunk.base64EncodedString()
-        let jsonObject = JSObject()
-        jsonObject.put("data", base64Chunk)
+        var jsonObject: JSObject = [:] // Initialize an empty JSObject
+        jsonObject["data"] = base64Chunk // Add the "data" key with the Base64 string value
         notifyListeners("onAudioChunk", data: jsonObject)
     }
     
