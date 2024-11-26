@@ -79,7 +79,7 @@ public class VoiceRecorder: CAPPlugin, AudioChunkDelegate {
         let jsonObject: [String: String] = ["data": base64Chunk]
         if let jsonData = try? JSONSerialization.data(withJSONObject: jsonObject, options: []),
            let jsonString = String(data: jsonData, encoding: .utf8) {
-               notifyListeners("onAudioChunk", data: jsonString)
+               notifyListeners("onAudioChunk", jsonString)
            } else {
                print("Error: Failed to serialize JSON")
            }
