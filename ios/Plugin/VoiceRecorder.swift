@@ -76,13 +76,9 @@ public class VoiceRecorder: CAPPlugin, AudioChunkDelegate {
     // Delegate method to handle audio chunks
     func didReceiveAudioChunk(_ chunk: Data) {
         let base64Chunk = chunk.base64EncodedString()
-        let jsonObject: [String: String] = ["data": base64Chunk]
-        if let jsonData = try? JSONSerialization.data(withJSONObject: jsonObject, options: []),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-               notifyListeners("onAudioChunk", jsonString)
-           } else {
-               print("Error: Failed to serialize JSON")
-           }
+        let jsonObject = JSObject()
+        jsonObject.put("data", base64Chunk)
+        notifyListeners("onAudioChunk", data: jsonObject)
     }
     
     func doesUserGaveAudioRecordingPermission() -> Bool {
