@@ -36,7 +36,7 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate {
             originalRecordingSessionCategory = recordingSession.category
             try recordingSession.setCategory(AVAudioSession.Category.playAndRecord)
             try recordingSession.setActive(true)
-            audioFilePath = getDirectoryToSaveAudioFile().appendingPathComponent("\(UUID().uuidString).aac")
+            audioFilePath = getDirectoryToSaveAudioFile().appendingPathComponent("\(UUID().uuidString).wav")
             audioRecorder = try AVAudioRecorder(url: audioFilePath, settings: settings)
             audioRecorder.delegate = self
             audioRecorder.isMeteringEnabled = true
@@ -64,6 +64,7 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate {
             audioRecorder = nil
             recordingSession = nil
             status = CurrentRecordingStatus.NONE
+            try FileManager.default.removeItem(at: audioFilePath)
         } catch {}
     }
 
