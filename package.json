@@ -1,6 +1,6 @@
 {
   "name": "fpmk-capacitor-voice-recorder",
-  "version": "6.4.3",
+  "version": "6.4.4",
   "description": "Capacitor plugin for voice recording",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
