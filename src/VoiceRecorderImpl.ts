@@ -33,7 +33,7 @@ export class VoiceRecorderImpl {
   private firstChunk = false;
   private bufferSize = 0;
   private chunkSize = 4096; // 4KB in bytes
-  private firstChunkSize = navigator.userAgent.includes('Mozilla') ? 158: 44; // 44 bytes
+  private firstChunkSize = navigator.userAgent.includes('Mozilla') ? 44: 158; // 44 bytes
 
   public static async canDeviceVoiceRecord(): Promise<GenericResponse> {
     if (navigator?.mediaDevices?.getUserMedia == null || VoiceRecorderImpl.getSupportedMimeType() == null) {
