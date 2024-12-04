@@ -5,12 +5,11 @@ protocol AudioChunkDelegate: AnyObject {
     func didReceiveAudioChunk(_ chunk: Data)
 }
 
-class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate {
+class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
 
-    private var recordingSession: AVAudioSession!
-    private var audioRecorder: AVAudioRecorder!
-    private var audioFilePath: URL!
-    private var originalRecordingSessionCategory: AVAudioSession.Category!
+    private let captureSession = AVCaptureSession()
+    private let audioOutput = AVCaptureAudioDataOutput()
+    private var audioData = Data() // Stores raw PCM data
     private var status = CurrentRecordingStatus.NONE
 
     weak var delegate: AudioChunkDelegate?
@@ -21,91 +20,72 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate {
         AVNumberOfChannelsKey: 1,
         AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
     ]
-
-    private var audioBuffer = Data()
-    private let chunkSize: Int = 1024 * 4 // Example: 4 KB per chunk
     private var hasSentWAVHeader = false
 
-    private func getDirectoryToSaveAudioFile() -> URL {
-        return URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    override init() {
+        super.init()
+        setupCaptureSession()
     }
 
+   private func setupCaptureSession() {
+       captureSession.beginConfiguration()
+
+       // Add audio input
+       guard let audioDevice = AVCaptureDevice.default(for: .audio) else {
+           print("No audio device available")
+           return
+       }
+
+       do {
+           let audioInput = try AVCaptureDeviceInput(device: audioDevice)
+           if captureSession.canAddInput(audioInput) {
+               captureSession.addInput(audioInput)
+           } else {
+               print("Cannot add audio input")
+               return
+           }
+       } catch {
+           print("Failed to create audio input: \(error.localizedDescription)")
+           return
+       }
+
+       // Add audio output
+       if captureSession.canAddOutput(audioOutput) {
+           captureSession.addOutput(audioOutput)
+           audioOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "AudioQueue"))
+       } else {
+           print("Cannot add audio output")
+           return
+       }
+
+       captureSession.commitConfiguration()
+   }
+
+   func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+       guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
+           print("Failed to get audio buffer")
+           return
+       }
+
+       let length = CMBlockBufferGetDataLength(blockBuffer)
+       var rawData = Data(count: length)
+       rawData.withUnsafeMutableBytes { bytes in
+           CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: bytes)
+       }
+        delegate?.didReceiveAudioChunk(rawData)
+   }
+
     public func startRecording() -> Bool {
-        do {
-            recordingSession = AVAudioSession.sharedInstance()
-            originalRecordingSessionCategory = recordingSession.category
-            try recordingSession.setCategory(AVAudioSession.Category.playAndRecord)
-            try recordingSession.setActive(true)
-            audioFilePath = getDirectoryToSaveAudioFile().appendingPathComponent("\(UUID().uuidString).wav")
-            audioRecorder = try AVAudioRecorder(url: audioFilePath, settings: settings)
-            audioRecorder.delegate = self
-            audioRecorder.isMeteringEnabled = true
-            audioRecorder.record(forDuration: 0) // Record indefinitely
-
-            status = CurrentRecordingStatus.RECORDING
-
-            // Monitor the audio file for changes
-            DispatchQueue.global(qos: .background).async { [weak self] in
-                self?.monitorAudioFile()
-            }
-
-            return true
-        } catch {
-            return false
-        }
+        audioData = Data() // Reset audio data
+        captureSession.startRunning()
+        status = CurrentRecordingStatus.RECORDING
+        print("Recording started")
+        return true
     }
 
     public func stopRecording() {
-        do {
-            audioRecorder.stop()
-            try recordingSession.setActive(false)
-            try recordingSession.setCategory(originalRecordingSessionCategory)
-            originalRecordingSessionCategory = nil
-            audioRecorder = nil
-            recordingSession = nil
-            status = CurrentRecordingStatus.NONE
-            try FileManager.default.removeItem(at: audioFilePath)
-        } catch {}
-    }
-
-    private func monitorAudioFile() {
-        while audioRecorder.isRecording {
-            guard let recorder = audioRecorder else { return }
-            recorder.updateMeters()
-
-            do {
-                // Read raw data from the file
-                let audioData = try Data(contentsOf: audioFilePath)
-
-                // Append to the buffer
-                audioBuffer.append(audioData)
-
-                // Check if the WAV header has been sent
-                if !hasSentWAVHeader {
-                    let header = createWAVHeader(sampleRate: 16000, channels: 1, bitDepth: 16, dataLength: 0xFFFFFFFF)
-                    delegate?.didReceiveAudioChunk(header)
-                    hasSentWAVHeader = true
-                }
-
-                // Check if the buffer has reached the desired chunk size
-                if audioBuffer.count >= chunkSize {
-                    let chunk = audioBuffer.prefix(chunkSize) // Extract the chunk
-                    audioBuffer.removeFirst(chunkSize)        // Remove the chunk from the buffer
-                    delegate?.didReceiveAudioChunk(chunk)     // Notify the delegate
-                }
-            } catch {
-                print("Error monitoring audio file: \(error)")
-            }
-
-            // Sleep briefly to avoid overloading the CPU
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-
-        // Flush remaining data in the buffer
-        if !audioBuffer.isEmpty {
-            delegate?.didReceiveAudioChunk(audioBuffer)
-            audioBuffer.removeAll()
-        }
+        captureSession.stopRunning()
+        print("Recording stopped and saved as WAV")
     }
 
     private func createWAVHeader(sampleRate: Int, channels: Int, bitDepth: Int, dataLength: Int) -> Data {
@@ -134,13 +114,9 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate {
         return header
     }
 
-    public func getOutputFile() -> URL {
-        return audioFilePath
-    }
-
     public func pauseRecording() -> Bool {
         if(status == CurrentRecordingStatus.RECORDING) {
-            audioRecorder.pause()
+            captureSession.stopRunning()
             status = CurrentRecordingStatus.PAUSED
             return true
         } else {
@@ -150,7 +126,7 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate {
 
     public func resumeRecording() -> Bool {
         if(status == CurrentRecordingStatus.PAUSED) {
-            audioRecorder.record()
+            captureSession.startRunning()
             status = CurrentRecordingStatus.RECORDING
             return true
         } else {
