@@ -76,6 +76,11 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
    }
 
     public func startRecording() -> Bool {
+        if !hasSentWAVHeader {
+            let header = createWAVHeader(16000, 1, 16, 44)
+            delegate?.didReceiveAudioChunk(header)
+            hasSentWAVHeader = true
+        }
         audioData = Data() // Reset audio data
         captureSession.startRunning()
         status = CurrentRecordingStatus.RECORDING
