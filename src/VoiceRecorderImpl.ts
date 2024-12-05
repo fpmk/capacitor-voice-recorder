@@ -212,7 +212,7 @@ export class VoiceRecorderImpl {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64data = reader.result as string;
-      const audioChunkEvent: AudioChunkEvent = { data: base64data.split(',')[1] }; // Base64-encoded audio
+      const audioChunkEvent: AudioChunkEvent = { data: base64data.split(',')[1], mimeType: type }; // Base64-encoded audio
       _this.notifyListeners('onAudioChunk', audioChunkEvent); // Emit audio chunk event
     };
     reader.readAsDataURL(combinedBlob);

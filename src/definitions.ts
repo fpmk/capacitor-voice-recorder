@@ -27,6 +27,7 @@ export interface CurrentRecordingStatus {
 
 export interface AudioChunkEvent {
   data: string; // Base64 encoded audio chunk data
+  mimeType: string;
 }
 
 export interface VoiceRecorderPlugin {
