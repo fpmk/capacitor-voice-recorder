@@ -19,6 +19,11 @@ const neverResolvingPromise = (): Promise<any> => new Promise(() => undefined);
 export class VoiceRecorderImpl {
   private pendingResult: Promise<RecordingData> = neverResolvingPromise();
   private _recorder: any;
+  private buffer: ArrayBuffer = new ArrayBuffer(0);
+  private firstChunk = false;
+  private bufferSize = 0;
+  private chunkSize = 4096; // 4KB in bytes
+  private firstChunkSize = 44; // 44 bytes
 
   constructor(_recorder: any, _this: any) {
     this._recorder = _recorder;
@@ -31,6 +36,10 @@ export class VoiceRecorderImpl {
       return failedToRecordError();
     };
     this._recorder.onstop = async () => {
+      this.sendAudioData(this.int8ArrayToBase64(this.buffer), 'audio/mp3', _this);
+      // Reset buffer
+      this.buffer = new ArrayBuffer(0);
+      this.bufferSize = 0;
       this.prepareInstanceForNextOperation();
       return Promise.resolve();
     };
@@ -59,6 +68,7 @@ export class VoiceRecorderImpl {
     if (!havingPermission.value) {
       throw missingPermissionError();
     }
+    this.firstChunk = false;
     this._recorder.start();
     return successResponse();
   }
@@ -151,12 +161,32 @@ export class VoiceRecorderImpl {
     return foundSupportedType ?? null;
   }
 
-  // private onSuccessfullyStartedRecording(_this: any): GenericResponse {
-  //   return successResponse();
-  // }
-  //
+  private concatenateArrayBuffers(buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
+    // Create a new ArrayBuffer with a combined size
+    const totalLength = buffer1.byteLength + buffer2.byteLength;
+    const result = new Uint8Array(totalLength);
+
+    // Copy the first buffer into the result
+    result.set(new Uint8Array(buffer1), 0);
+
+    // Copy the second buffer into the result
+    result.set(new Uint8Array(buffer2), buffer1.byteLength);
+
+    // Return the concatenated ArrayBuffer
+    return result.buffer;
+  }
+
   private handleDataAvailable(blob: ArrayBuffer, _this: any) {
-    this.sendAudioData(this.int8ArrayToBase64(blob), 'audio/mp3', _this);
+    this.buffer = this.concatenateArrayBuffers(this.buffer, blob);
+    this.bufferSize += blob.byteLength;
+    if (this.bufferSize >= this.chunkSize || (!this.firstChunk && this.bufferSize >= this.firstChunkSize)) {
+      this.firstChunk = true;
+      this.sendAudioData(this.int8ArrayToBase64(this.buffer), 'audio/mp3', _this);
+
+      // Reset buffer
+      this.buffer = new ArrayBuffer(0);
+      this.bufferSize = 0;
+    }
   }
 
   private int8ArrayToBase64(int8Array: ArrayBuffer): string {
@@ -171,11 +201,6 @@ export class VoiceRecorderImpl {
     const audioChunkEvent: AudioChunkEvent = { data: base64, mimeType: type }; // Base64-encoded audio
     _this.notifyListeners('onAudioChunk', audioChunkEvent); // Emit audio chunk event
   }
-
-  // private onFailedToStartRecording(): GenericResponse {
-  //   this.prepareInstanceForNextOperation();
-  //   throw failedToRecordError();
-  // }
 
   private prepareInstanceForNextOperation(): void {
     if (this._recorder != null && this._recorder.state === 1) {
