@@ -59,14 +59,7 @@ export class VoiceRecorderImpl {
     if (!havingPermission.value) {
       throw missingPermissionError();
     }
-    this._recorder
-      .start()
-      .then(() => {
-        this.onSuccessfullyStartedRecording(_this);
-      })
-      .catch(() => {
-        this.onFailedToStartRecording();
-      });
+    this._recorder.start();
     return successResponse();
   }
 
@@ -158,10 +151,10 @@ export class VoiceRecorderImpl {
     return foundSupportedType ?? null;
   }
 
-  private onSuccessfullyStartedRecording(_this: any): GenericResponse {
-    return successResponse();
-  }
-
+  // private onSuccessfullyStartedRecording(_this: any): GenericResponse {
+  //   return successResponse();
+  // }
+  //
   private handleDataAvailable(blob: ArrayBuffer, _this: any) {
     this.sendAudioData(this.int8ArrayToBase64(blob), 'audio/mp3', _this);
   }
@@ -179,10 +172,10 @@ export class VoiceRecorderImpl {
     _this.notifyListeners('onAudioChunk', audioChunkEvent); // Emit audio chunk event
   }
 
-  private onFailedToStartRecording(): GenericResponse {
-    this.prepareInstanceForNextOperation();
-    throw failedToRecordError();
-  }
+  // private onFailedToStartRecording(): GenericResponse {
+  //   this.prepareInstanceForNextOperation();
+  //   throw failedToRecordError();
+  // }
 
   private prepareInstanceForNextOperation(): void {
     if (this._recorder != null && this._recorder.state === 'RECORDING') {
