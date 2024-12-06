@@ -12,7 +12,7 @@ export class VoiceRecorderWeb extends WebPlugin implements VoiceRecorderPlugin {
     recordingGain: 1, // Initial recording volume
     encoderBitRate: 96, // MP3 encoding bit rate
     streaming: true, // Data will be returned in chunks (ondataavailable callback) as it is encoded,
-    streamBufferSize: 512,
+    streamBufferSize: 4096,
     // rather than at the end as one large blob
     constraints: {
       // Optional audio constraints, see https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
@@ -37,7 +37,7 @@ export class VoiceRecorderWeb extends WebPlugin implements VoiceRecorderPlugin {
   }
 
   public startRecording(): Promise<GenericResponse> {
-    return this.voiceRecorderInstance.startRecording(this);
+    return this.voiceRecorderInstance.startRecording();
   }
 
   public stopRecording(): Promise<RecordingData> {

@@ -47,8 +47,8 @@ export class VoiceRecorderImpl {
     }
   }
 
-  public async startRecording(_this: any): Promise<GenericResponse> {
-    if (this._recorder.state === 'RECORDING') {
+  public async startRecording(): Promise<GenericResponse> {
+    if (this._recorder.state === 1) {
       throw alreadyRecordingError();
     }
     const deviceCanRecord = await VoiceRecorderImpl.canDeviceVoiceRecord();
@@ -114,7 +114,7 @@ export class VoiceRecorderImpl {
   public pauseRecording(): Promise<GenericResponse> {
     if (this._recorder == null) {
       throw recordingHasNotStartedError();
-    } else if (this._recorder.state === 'RECORDING') {
+    } else if (this._recorder.state === 1) {
       this._recorder.pause();
       return Promise.resolve(successResponse());
     } else {
@@ -125,7 +125,7 @@ export class VoiceRecorderImpl {
   public resumeRecording(): Promise<GenericResponse> {
     if (this._recorder == null) {
       throw recordingHasNotStartedError();
-    } else if (this._recorder.state === 'PAUSED') {
+    } else if (this._recorder.state === 2) {
       this._recorder.resume();
       return Promise.resolve(successResponse());
     } else {
@@ -136,9 +136,9 @@ export class VoiceRecorderImpl {
   public getCurrentStatus(): Promise<CurrentRecordingStatus> {
     if (this._recorder == null) {
       return Promise.resolve({ status: RecordingStatus.NONE });
-    } else if (this._recorder.state === 'RECORDING') {
+    } else if (this._recorder.state === 1) {
       return Promise.resolve({ status: RecordingStatus.RECORDING });
-    } else if (this._recorder.state === 'PAUSED') {
+    } else if (this._recorder.state === 2) {
       return Promise.resolve({ status: RecordingStatus.PAUSED });
     } else {
       return Promise.resolve({ status: RecordingStatus.NONE });
@@ -178,7 +178,7 @@ export class VoiceRecorderImpl {
   // }
 
   private prepareInstanceForNextOperation(): void {
-    if (this._recorder != null && this._recorder.state === 'RECORDING') {
+    if (this._recorder != null && this._recorder.state === 1) {
       try {
         this._recorder.stop();
       } catch (error) {
