@@ -1,17 +1,20 @@
 import Foundation
 import AVFoundation
 
+
+
 protocol AudioChunkDelegate: AnyObject {
   func didReceiveAudioChunk(_ chunk: Data)
 }
 
-class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
 
-  private let captureSession = AVCaptureSession()
+
+class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
   private let audioOutput = AVCaptureAudioDataOutput()
   private var audioData = Data() // Stores raw PCM data
   private var status = CurrentRecordingStatus.NONE
 
+  private var audioSession: AVAudioSession!
   private var audioEngine: AVAudioEngine = AVAudioEngine()
   private var inputNode: AVAudioInputNode!
   private var audioFormat: AVAudioFormat!
@@ -25,7 +28,7 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
   private let outputBus: AVAudioNodeBus = 0
   private let bufferSize: AVAudioFrameCount = 4096
   private var inputFormat: AVAudioFormat!
-
+  private var hasSentWAVHeader = false
 
   weak var delegate: AudioChunkDelegate?
 
@@ -35,65 +38,70 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
     AVNumberOfChannelsKey: 1,
     AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
   ]
-  private var hasSentWAVHeader = false
 
   override init() {
     super.init()
     setupEngine()
+    addNotificationObservers()
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self) // Clean up observers
   }
 
   fileprivate func setupEngine() {
-    /// I don't know what the heck is happening under the hood, but if you don't call these next few lines in one closure your code will crash.
-    /// Maybe it's threading issue?
-    self.audioEngine.reset()
-    let inputNode = audioEngine.inputNode
-    inputFormat = inputNode.outputFormat(forBus: 0)
-    inputNode.installTap(onBus: inputBus, bufferSize: bufferSize, format: inputFormat, block: { [weak self] (buffer, time) in
-      if !self!.hasSentWAVHeader {
-        let header = self?.createWAVHeader(sampleRate: Int(self!.sampleRate), channels: 1, bitDepth: 16, dataLength: 100 * 1024 * 1024)
-        self!.delegate?.didReceiveAudioChunk(header!)
-        self!.hasSentWAVHeader = true
-      }
-      self?.convert(buffer: buffer, time: time.audioTimeStamp.mSampleTime)
-    })
-    self.audioEngine.prepare()
+    do {
+      audioSession = AVAudioSession.sharedInstance()
+      try audioSession.setCategory(AVAudioSession.Category.playAndRecord, mode: AVAudioSession.Mode.default, options: AVAudioSession.CategoryOptions.defaultToSpeaker)
+      try audioSession.setActive(true)
+      self.audioEngine.reset()
+      let inputNode = audioEngine.inputNode
+      inputFormat = inputNode.outputFormat(forBus: 0)
+      inputNode.installTap(onBus: inputBus, bufferSize: bufferSize, format: inputFormat, block: { [weak self] (buffer, time) in
+        if !self!.hasSentWAVHeader {
+          let header = self?.createWAVHeader(sampleRate: Int(self!.sampleRate), channels: 1, bitDepth: 16, dataLength: 100 * 1024 * 1024)
+          self!.delegate?.didReceiveAudioChunk(header!)
+          self!.hasSentWAVHeader = true
+        }
+        self?.convert(buffer: buffer, time: time.audioTimeStamp.mSampleTime)
+      })
+      self.audioEngine.prepare()
+    } catch {
+      print("audioSession properties weren't set because of an error.")
+    }
     print("[AudioEngine]: Setup finished.")
   }
 
-  func startStreaming() {
-    guard (audioEngine.inputNode.inputFormat(forBus: inputBus).channelCount > 0) else {
-      print("[AudioEngine]: No input is available.")
-      self.streamingData = false
-      return
-    }
-
+  func startStreaming() -> Bool {
     do {
+      guard (audioEngine.inputNode.inputFormat(forBus: inputBus).channelCount > 0) else {
+        print("[AudioEngine]: No input is available.")
+        self.streamingData = false
+        return false
+      }
       try audioEngine.start()
     } catch {
       self.streamingData = false
       print("[AudioEngine]: \(error.localizedDescription)")
-      return
+      return false
     }
-
     print("[AudioEngine]: Started tapping microphone.")
-    return
+    return true
   }
 
   func stopStreaming() {
-    self.audioEngine.stop()
-    self.outputFile = nil
-    self.audioEngine.reset()
-    self.audioEngine.inputNode.removeTap(onBus: inputBus)
-    self.hasSentWAVHeader = false
-    setupEngine()
+    do {
+      self.audioEngine.stop()
+      self.outputFile = nil
+      self.hasSentWAVHeader = false
+    } catch {
+      print("[AudioEngine]: \(error.localizedDescription)")
+    }
   }
 
-
   private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-    // Convert PCMBuffer to Data
     let audioData = bufferToData(buffer: buffer)
     delegate?.didReceiveAudioChunk(audioData)
-
   }
 
   private func bufferToData(buffer: AVAudioPCMBuffer) -> Data {
@@ -103,14 +111,12 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
 
   public func startRecording() -> Bool {
     hasSentWAVHeader = false
-    startStreaming()
     status = CurrentRecordingStatus.RECORDING
     print("Recording started")
-    return true
+    return startStreaming()
   }
 
   public func stopRecording() {
-    //    captureSession.stopRunning()
     stopStreaming()
     print("Recording stopped and saved as WAV")
   }
@@ -121,9 +127,7 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
     let audioFormat = 1 // PCM
     let byteRate = sampleRate * channels * (bitDepth / 8)
     let blockAlign = channels * (bitDepth / 8)
-
     var header = Data()
-
     header.append("RIFF".data(using: .ascii)!) // ChunkID
     header.append(UInt32(chunkSize).littleEndian.data) // ChunkSize
     header.append("WAVE".data(using: .ascii)!) // Format
@@ -137,13 +141,11 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
     header.append(UInt16(bitDepth).littleEndian.data) // BitsPerSample
     header.append("data".data(using: .ascii)!) // Subchunk2ID
     header.append(UInt32(dataLength).littleEndian.data) // Subchunk2Size
-
     return header
   }
 
   public func pauseRecording() -> Bool {
     if(status == CurrentRecordingStatus.RECORDING) {
-      captureSession.stopRunning()
       status = CurrentRecordingStatus.PAUSED
       return true
     } else {
@@ -153,7 +155,6 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
 
   public func resumeRecording() -> Bool {
     if(status == CurrentRecordingStatus.PAUSED) {
-      captureSession.startRunning()
       status = CurrentRecordingStatus.RECORDING
       return true
     } else {
@@ -165,32 +166,65 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
     return status
   }
 
+  private func addNotificationObservers() {
+    NotificationCenter.default.addObserver(self,
+                                           selector: #selector(handleInterruption(_:)),
+                                           name: AVAudioSession.interruptionNotification,
+                                           object: nil)
+  }
+
+  @objc private func handleInterruption(_ notification: Notification) {
+    guard let userInfo = notification.userInfo,
+          let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+          let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+    switch type {
+    case .began:
+      print("Audio session interruption began.")
+      audioEngine.stop()
+    case .ended:
+      print("Audio session interruption ended.")
+      if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+        let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+        if options.contains(.shouldResume) {
+          resumeAudioSession()
+        }
+      }
+    @unknown default:
+      print("Unknown audio session interruption type.")
+    }
+  }
+
+  private func resumeAudioSession() {
+    do {
+      try audioSession.setActive(true)
+      setupEngine() // Reinitialize and start the audio engine
+      print("Audio session resumed and audio engine restarted.")
+    } catch {
+      print("Failed to reactivate audio session: \(error.localizedDescription)")
+    }
+  }
+
   private func convert(buffer: AVAudioPCMBuffer, time: Float64) {
     guard let outputFormat = AVAudioFormat(commonFormat: self.converterFormat, sampleRate: sampleRate, channels: numberOfChannels, interleaved: false) else {
       streamingData = false
       print("[AudioEngine]: Failed to create output format.")
       return
     }
-
     guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
       streamingData = false
       print("[AudioEngine]: Failed to create the converter.")
       return
     }
-
     let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
       outStatus.pointee = AVAudioConverterInputStatus.haveData
       return buffer
     }
-
     let targetFrameCapacity = AVAudioFrameCount(outputFormat.sampleRate) * buffer.frameLength / AVAudioFrameCount(buffer.format.sampleRate)
     if let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: targetFrameCapacity) {
       var error: NSError?
       let status = converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
-
       switch status {
       case .haveData:
-
         self.processAudioBuffer(convertedBuffer)
         streamingData = true
       case .error:
@@ -206,9 +240,7 @@ class CustomMediaRecorder: NSObject, AVAudioRecorderDelegate, AVCaptureAudioData
         streamingData = false
         print("[AudioEngine]: Unknown converter error")
       }
-
     }
-
   }
 }
 
